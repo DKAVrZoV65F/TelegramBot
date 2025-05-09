@@ -77,7 +77,7 @@ target/
 celerybeat-schedule
 
 # dotenv
-# .env
+.env
 
 # virtualenv
 venv/
@@ -186,3 +186,5 @@ fabric.properties
 # models and animations
 models
 animations
+
+hf_cache/

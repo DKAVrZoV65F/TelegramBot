@@ -1,5 +1,6 @@
 python-telegram-bot
-
 aiogram==2.25.2
 python-dotenv>=1.0
 firebird-driver==1.9.0
+transformers>=4.30
+torch

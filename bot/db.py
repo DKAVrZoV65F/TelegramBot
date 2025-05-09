@@ -9,9 +9,6 @@ DDL_FILE = BASE_DIR / "database" / "ddl.sql"
 
 
 def _dsn(path: Union[str, Path]) -> str:
-    """
-    host:path   или   абсолютный_путь
-    """
     path_str = str(Path(path).expanduser()).replace("\\", "/")
     return f"{settings.DB_HOST}:{path_str}" if settings.DB_HOST else path_str
 
