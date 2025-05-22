@@ -11,6 +11,12 @@ KEYWORD_TAGS = { "оплата":"finance", "прайс":"finance",
                  "срочно":"urgent",  "баг":"bug",
                  "ошибка":"bug",     "фича":"feature" }
 
+# Расширенные метки для классификации
+AI_LABELS = [
+    "bug", "feature", "idea", "praise", "question", "urgent",
+    "positive", "negative", "proposal", "competitor", "flood"
+]
+
 async def keyword_tagger(text: str) -> list[str]:
     if not text:
         return []
@@ -66,3 +72,41 @@ async def ai_sentiment(text: str) -> str:
         return "neutral"
     res = _sentiment(text)[0]
     return res["label"].lower()
+
+# Новая функция классификации сообщения
+async def classify_message(text: str) -> list:
+    if not text:
+        return []
+
+    # Используем существующий pipeline для классификации
+    res = _zs_classifier(text, AI_LABELS, multi_label=True)
+    tags = [lbl for lbl, score in zip(res["labels"], res["scores"]) if score > 0.4]
+
+    # Определение тональности
+    sentiment_res = _sentiment(text)[0]
+    sentiment_label = sentiment_res["label"].lower()
+    if sentiment_label == "positive":
+        tags.append("praise")
+    elif sentiment_label == "negative":
+        tags.append("negative")
+
+    # Обнаружение продуктов и конкурентов по ключевым словам
+    lower_text = text.lower()
+
+    # Продукты
+    if "firebird" in lower_text:
+        tags.append("firebird")
+    if "reddatabase" in lower_text:
+        tags.append("reddatabase")
+    if "ib expert" in lower_text:
+        tags.append("red-expert")
+    # Конкуренты
+    if "postgre" in lower_text:
+        tags.append("competitor")
+    if "ib expert" in lower_text:
+        tags.append("competitor")
+    # Флуд
+    if " самолет" in lower_text or "флуд" in lower_text:
+        tags.append("flood")
+
+    return list(set(tags))

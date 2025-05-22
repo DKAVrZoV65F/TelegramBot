@@ -1,4 +1,4 @@
-/* Firebird 3.0 */
+/* Firebird 3.0 | 5.0 */
 
 -- ========================
 -- 1. Таблица сообщений
@@ -50,7 +50,8 @@ CREATE TABLE tag_actions (
     tag_id        INTEGER,
     action        VARCHAR(32),
     action_by     VARCHAR(64),
-    action_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    action_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notification_id BIGINT
 );
 
 -- ========================

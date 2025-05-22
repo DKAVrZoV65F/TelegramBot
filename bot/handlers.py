@@ -5,9 +5,10 @@ from aiogram import Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from datetime import datetime, timedelta
 from .db import get_connection
-from .ai import keyword_tagger, ai_tagger, ai_sentiment
+from .ai import keyword_tagger, ai_tagger, ai_sentiment, classify_message
 from .config import settings
 from typing import List, Optional
+from aiogram.utils.markdown import hbold, escape_md
 
 ADMIN_IDS = settings.ADMIN_IDS
 
@@ -21,6 +22,15 @@ RUS2ENG = {
     "похвала": "praise", "спасибо": "praise",
     "вопрос": "question","как": "question",
     "срочно": "urgent",  "важно": "urgent",
+    "положительный": "positive", 
+    "негативный": "negative",
+    "предложение": "enhancement",
+    "firebird": "firebird",
+    "reddatabase": "reddatabase",
+    "ред эксперт": "red-expert",
+    "postgres": "competitor",
+    "ib expert": "competitor",
+    "флуд": "flood"
 }
 
 def normalize_tags(raw: Optional[str]) -> List[str]:
@@ -48,18 +58,46 @@ def normalize_tags(raw: Optional[str]) -> List[str]:
 def register(dp: Dispatcher):
     dp.message_handler(commands=["start"])(cmd_start)
     dp.message_handler(commands=["help"])(cmd_help)
-    dp.message_handler(commands=["list"])(cmd_list)
-    dp.message_handler(commands=["export"])(cmd_export)
+
+    # Только для админов
+    dp.message_handler(lambda m: m.from_user.id in settings.ADMIN_IDS, commands=["list"])(cmd_list)
+    dp.message_handler(lambda m: m.from_user.id in settings.ADMIN_IDS, commands=["export"])(cmd_export)
+
+    # Перехват для неадминов
+    dp.message_handler(commands=["list"])(restricted_command)
+    dp.message_handler(commands=["export"])(restricted_command)
+
+    # Обработка сообщений только в группах/каналах
+    dp.message_handler(
+        lambda m: m.chat.type in ["group", "supergroup", "channel"],
+        content_types=types.ContentType.ANY
+    )(collect)
+
     dp.callback_query_handler(lambda c: c.data and c.data.startswith("mark:"))(process_mark)
+    dp.callback_query_handler(lambda c: c.data == "close" and c.from_user.id in ADMIN_IDS)(close_history)
+    dp.callback_query_handler(lambda c: c.data and c.data.startswith("history:") and c.from_user.id in ADMIN_IDS)(show_history)
+    dp.callback_query_handler(lambda c: c.data and c.data.startswith("delete:") and c.from_user.id in ADMIN_IDS)(delete_notification)
     
-    @dp.message_handler(content_types=types.ContentType.ANY)
-    async def collect(message: types.Message):
-        await save_to_db(message)
-        kw_tags = await keyword_tagger(message.text or "")
-        await save_tags(message, kw_tags, False)
-        asyncio.create_task(process_with_ai(message))
+async def collect(message: types.Message):
+    await save_to_db(message)
+    text = message.text or ""
+    
+    # kw_tags = await keyword_tagger(message.text or "")
+    # await save_tags(message, kw_tags, False)
+    # asyncio.create_task(process_with_ai(message))
+    
+    # Автоматическая классификация и тегирование
+    ai_tags = await classify_message(text)
+    await save_tags(message, ai_tags, False)
+
+    # Обработка с AI (sentiment и др.)
+    asyncio.create_task(process_with_ai(message))
 
 async def save_to_db(m: types.Message):
+     # Пропускаем личные сообщения
+    if m.chat.type == "private":
+        return
+    
     con = get_connection(); cur = con.cursor()
     cur.execute("""
         INSERT INTO messages
@@ -79,6 +117,9 @@ async def save_to_db(m: types.Message):
     con.close()
 
 async def process_with_ai(message: types.Message):
+    if message.chat.type == "private":
+        return
+    
     text = message.text or ""
     sentiment = await ai_sentiment(text)
     con = get_connection(); cur = con.cursor()
@@ -100,6 +141,9 @@ async def save_tags(message: types.Message,
     ai      — True, если теги пришли от AI, False — от keyword_tagger
     """
     if not tags:
+        return
+
+    if message.chat.type == "private" or not tags:
         return
 
     con = get_connection()
@@ -126,16 +170,22 @@ async def save_tags(message: types.Message,
 
         action = "ai_added" if ai else "kw_added"
         cur.execute("""
-            INSERT INTO tag_actions
-              (message_id, chat_id, tag_id, action, action_by)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO tag_actions 
+            (message_id, chat_id, tag_id, action, action_by, notification_id)
+            VALUES (?, ?, 
+                (SELECT id FROM tags WHERE name = ?), 
+                'notified', 
+                ?,
+                ?
+            )
         """, (
             message.message_id,
             message.chat.id,
-            tag_id,
-            action,
-            message.from_user.username or "unknown"
+            tag,
+            "system",
+            message.message_id  # Сохраняем ID отправленного уведомления
         ))
+
 
         if ai:
             for admin in ADMIN_IDS:
@@ -151,17 +201,67 @@ async def save_tags(message: types.Message,
     con.close()
 
 async def notify_admin(message: types.Message, tag: str, admin_id: int):
-    link = make_msg_link(message.chat.id, message.message_id)
-    text = (f"🔔 Найден тег *{tag}* в чате `{message.chat.title}`\n"
-            f"[Перейти к сообщению]({link})")
-    bot = message.bot
-    await bot.send_message(admin_id, text,
-                           parse_mode="Markdown",
-                           reply_markup=mk_kb(message.chat.id, message.message_id, tag))
+    # Формируем превью сообщения
+    preview_text = (message.text or "📷 Медиа-файл")[:100].replace("\n", " ")
+    if len(message.text or "") > 100:
+        preview_text += "..."
+
+    # Создаем понятную ссылку
+    link_url = make_msg_link(message.chat.id, message.message_id)
+    link_text = f"🔗 [Перейти к сообщению]({link_url})"
+    
+    # Формируем сообщение
+    text = (
+        f"🚨 **Новое сообщение требует внимания!**\n\n"
+        f"🏷 **Тег:** #{tag}\n"
+        f"📝 **Текст:** {preview_text}\n"
+        f"{link_text}"
+    )
+
+    # Создаем интерактивные кнопки
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("✅ Обработано", 
+            callback_data=f"mark:1:{message.chat.id}:{message.message_id}:{tag}"),
+        InlineKeyboardButton("❌ Отклонить", 
+            callback_data=f"mark:0:{message.chat.id}:{message.message_id}:{tag}"),
+        InlineKeyboardButton("🗑 Удалить уведомление", 
+            callback_data=f"delete:{message.chat.id}")
+    )
+
+    # Отправляем сообщение
+    msg = await message.bot.send_message(
+        admin_id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=kb,
+        disable_web_page_preview=True
+    )
+
+    # Сохраняем ID уведомления в БД
+    con = get_connection()
+    cur = con.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO tag_actions 
+            (message_id, chat_id, notification_id, action, action_by)
+            VALUES (?, ?, ?, 'notified', ?)
+        """, (
+            int(message.message_id),
+            message.chat.id,
+            msg.message_id,
+            "system"
+        ))
+        con.commit()
+    finally:
+        con.close()
 
 def make_msg_link(chat_id: int, msg_id: int) -> str:
-    # для супергрупп: убираем "-100"
-    cid = str(chat_id).replace("-100", "")
+    """Генерация корректной ссылки на сообщение"""
+    if str(chat_id).startswith("-100"):
+        cid = str(chat_id)[4:]
+    else:
+        cid = str(chat_id)
     return f"https://t.me/c/{cid}/{msg_id}"
 
 def mk_kb(chat_id: int, msg_id: int, tag: str) -> InlineKeyboardMarkup:
@@ -174,32 +274,99 @@ def mk_kb(chat_id: int, msg_id: int, tag: str) -> InlineKeyboardMarkup:
     return kb
 
 async def process_mark(call: CallbackQuery):
-    _, flag, chat_id, msg_id, tag = call.data.split(":")
-    flag, chat_id, msg_id = int(flag), int(chat_id), int(msg_id)
+    # Проверка прав администратора
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer("⛔ Доступ запрещен!", show_alert=True)
+        return
 
-    # 1) Обновляем флаг в БД
-    con = get_connection(); cur = con.cursor()
-    cur.execute(
-        """
-        UPDATE message_tags
-           SET processed=?
-         WHERE message_id=? AND chat_id=? AND tag_id=(
-           SELECT id FROM tags WHERE name=?
-         )
-        """,
-        (flag, msg_id, chat_id, tag)
-    )
-    con.commit()
-    con.close()
+    _, action, chat_id, msg_id, tag = call.data.split(":")
+    action = int(action)
+    chat_id = int(chat_id)
+    msg_id = int(msg_id)
 
-    # 2) Убираем inline-кнопки
-    # вариант 1: просто удалить всю разметку
-    # await call.message.edit_reply_markup(reply_markup=None)
-    # вариант 2: или удалить всё сообщение, если надо:
-    await call.message.delete()
+    con = get_connection()
+    try:
+        cur = con.cursor()
 
-    # 3) Ответить пользователю
-    await call.answer("Готово! ✅", show_alert=False)
+        # Получаем текущий статус и историю
+        cur.execute("""
+            SELECT mt.processed, 
+                   (SELECT action_by 
+                    FROM tag_actions 
+                    WHERE message_id = ? 
+                      AND chat_id = ? 
+                      AND tag_id = (SELECT id FROM tags WHERE name = ?)
+                    ORDER BY action_at DESC 
+                    ROWS 1)
+            FROM message_tags mt
+            WHERE mt.message_id = ? 
+              AND mt.chat_id = ? 
+              AND mt.tag_id = (SELECT id FROM tags WHERE name = ?)
+        """, (msg_id, chat_id, tag, msg_id, chat_id, tag))
+        
+        current_status, last_editor = cur.fetchone() or (0, None)
+
+        # Проверка конфликтов
+        if current_status == action:
+            await call.answer(f"Статус уже {'одобрен' if action else 'отклонён'}!")
+            return
+            
+        if current_status == 1 and action == 0 and last_editor:
+            await call.answer(
+                f"❌ Тег уже обработан @{last_editor}\n"
+                "Используйте /history для просмотра действий",
+                show_alert=True
+            )
+            return
+
+        # Обновление статуса
+        cur.execute("""
+            UPDATE message_tags
+            SET processed = ?
+            WHERE message_id = ? AND chat_id = ?
+              AND tag_id = (SELECT id FROM tags WHERE name = ?)
+        """, (action, msg_id, chat_id, tag))
+
+        # Логирование действия
+        cur.execute("""
+            INSERT INTO tag_actions 
+            (message_id, chat_id, tag_id, action, action_by)
+            VALUES (?, ?, 
+                (SELECT id FROM tags WHERE name = ?), 
+                ?, 
+                ?
+            )
+        """, (msg_id, chat_id, tag, 
+              'approved' if action else 'rejected', 
+              call.from_user.username))
+
+        con.commit()
+
+        await call.message.edit_reply_markup(
+        InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    f"{'✅' if action else '❌'} @{call.from_user.username[:12]}",
+                    callback_data="noop"
+                ),
+                InlineKeyboardButton(
+                    "📜 История действий",
+                    callback_data=f"history:{msg_id}:{chat_id}:{tag}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🗑 Удалить уведомление",
+                    callback_data=f"delete:{call.message.message_id}"
+                )
+            ]
+        ]))
+        await call.answer("Статус обновлен! ✅")
+
+    except Exception as e:
+        await call.answer("⚠️ Ошибка обновления!")
+    finally:
+        con.close()
 
 # === Команда /list ===
 """
@@ -446,3 +613,89 @@ P.S. Если всё ещё не понял — читай снова. Или н
 """,
         parse_mode="HTML"
     )
+
+async def restricted_command(message: types.Message):
+    if message.chat.type == "private":
+        await message.answer("🚫 Бот не работает в личных сообщениях!")
+    else:
+        await message.answer("⛔ Эта команда доступна только администраторам!")
+
+async def show_history(call: CallbackQuery):
+    _, msg_id, chat_id, tag = call.data.split(":")
+    
+    con = get_connection()
+    try:
+        cur = con.cursor()
+        cur.execute("""
+            SELECT action, action_by, action_at 
+            FROM tag_actions
+            WHERE message_id = ? 
+              AND chat_id = ? 
+              AND tag_id = (SELECT id FROM tags WHERE name = ?)
+            ORDER BY action_at DESC
+        """, (int(msg_id), int(chat_id), tag))
+        
+        history = cur.fetchall()
+        
+        text = f"{hbold('📋 История изменений:')}\n\n"
+        for idx, (action, editor, timestamp) in enumerate(history, 1):
+            # Экранируем специальные символы
+            safe_editor = escape_md(editor) if editor else "system"
+            text += (
+                f"{idx}. {timestamp.strftime('%d.%m.%Y %H:%M')} "
+                f"{hbold('Действие:')} {escape_md(action)} "
+                f"{hbold('Админ:')} @{safe_editor}\n"
+            )
+            
+        await call.message.answer(
+            text[:4000],
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup().add(
+                InlineKeyboardButton("Закрыть", callback_data="close")
+            )
+        )
+        await call.answer()
+        
+    except Exception as e:
+        await call.answer("⚠️ Ошибка загрузки истории")
+    finally:
+        con.close()
+
+async def delete_history(call: CallbackQuery):
+    await call.message.delete()
+    await call.answer()
+
+async def delete_notification(call: CallbackQuery):
+    try:
+        notification_id = int(call.data.split(":")[1])
+        
+        if call.from_user.id not in ADMIN_IDS:
+            await call.answer("⛔ Недостаточно прав!")
+            return
+
+        con = get_connection()
+        cur = con.cursor()
+
+        cur.execute("""
+            DELETE FROM tag_actions 
+            WHERE notification_id = ?
+        """, (notification_id,))
+
+        con.commit()
+        await call.message.delete()
+        await call.answer("Уведомление удалено! 🗑")
+
+    except ValueError:
+        await call.answer("⚠️ Неверный формат ID")
+    except Exception as e:
+        await call.answer("⚠️ Ошибка: {str(e)[:50]}")
+    finally:
+        con.close()
+
+async def close_history(call: CallbackQuery):
+    try:
+        await call.message.delete()
+        await call.answer("🗂 История закрыта")
+    except Exception as e:
+        await call.answer("⚠️ Не удалось закрыть")
+

@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    ports:
+      - "8080:8080"  # порт для бота (можете настроить по необходимости)
+    volumes:
+      - ./your_project_dir:/app
+    environment:
+      - TG_TOKEN=ваш_токен
+      - ... другие переменные
+    depends_on:
+      - firebird
+
+  firebird:
+    build:
+      context: .
+      dockerfile: Dockerfile.firebird
+    ports:
+      - "3050:3050"  # стандартный порт Firebird
+    volumes:
+      - firebird_data:/firebird_data
+      - ./path_to_your_bin:/firebird  # для ручного запуска
+    tty: true
+
+volumes:
+  firebird_data:
