@@ -4,3 +4,6 @@ python-dotenv>=1.0
 firebird-driver==1.9.0
 transformers>=4.30
 torch
+transformers
+apscheduler
+openpyxl
