@@ -1,6 +1,7 @@
-# keyboards/statistics_keyboards.py (или keyboards/admin.py)
+# keyboards/statistics_keyboards.py
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
 
 def statistics_type_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(row_width=1).add(
@@ -9,6 +10,7 @@ def statistics_type_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton("🏆 Топ-N тегов", callback_data="stats_type:top_n"),
         InlineKeyboardButton("❌ Закрыть", callback_data="close_notify")
     )
+
 
 def period_menu(prefix_with_type: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[

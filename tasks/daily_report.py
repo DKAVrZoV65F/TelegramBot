@@ -1,17 +1,16 @@
 # tasks/daily_report.py
 
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 from db import get_conn
-from config import settings
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from utils.config import settings
 from aiogram import types
-from apscheduler.triggers.date import DateTrigger
 
-async def _build_and_send(bot):
+
+async def build_and_send(bot):
     print("[TASK] Daily report task STARTED")
     since = datetime.utcnow() - timedelta(days=1)
-    con = get_conn(); cur = con.cursor()
+    con = get_conn()
+    cur = con.cursor()
 
     cur.execute("""
         SELECT COUNT(DISTINCT m.id)
@@ -41,18 +40,3 @@ async def _build_and_send(bot):
     )
     for admin_id in settings.ADMIN_IDS:
         await bot.send_message(admin_id, text, reply_markup=kb)
-
-def setup_scheduler(bot):
-    tz = ZoneInfo("Europe/Moscow")
-    sched = AsyncIOScheduler(timezone=tz)
-    run_date = datetime.now(tz).replace(hour=settings.HOUR, minute=settings.MINUTE, second=0, microsecond=0)
-
-    sched.add_job(
-        _build_and_send,
-        trigger=DateTrigger(run_date=run_date),
-        args=(bot,),
-        id="daily_report",
-        replace_existing=True
-    )
-
-    sched.start()

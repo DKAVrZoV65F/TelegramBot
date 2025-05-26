@@ -1,4 +1,4 @@
-# utils.py
+# util.py
 
 def enough_chars(text: str | None, min_len: int = 10) -> bool:
     return bool(text) and len(text.replace(" ", "")) >= min_len

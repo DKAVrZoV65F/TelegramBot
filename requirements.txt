@@ -8,3 +8,7 @@ transformers
 apscheduler
 openpyxl
 matplotlib
+beautifulsoup4
+pyautogui 
+keyboard 
+pygetwindow
