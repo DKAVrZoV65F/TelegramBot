@@ -56,4 +56,3 @@ def setup_scheduler(bot):
     )
 
     sched.start()
-

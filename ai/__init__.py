@@ -1,4 +1,3 @@
-
 # ai/__init__.py
 
 from .models import zs_pipe, sa_pipe
@@ -14,7 +13,6 @@ KEYWORD_TAGS = {
 }
 
 AI_LABELS = ["bug", "feature", "idea", "praise", "question", "urgent", "competitor"]
-
 
 KEY_THEME = {
     "не понятно": "вопросы",

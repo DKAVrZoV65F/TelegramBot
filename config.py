@@ -27,6 +27,16 @@ class Settings:
     HOUR:         int  = int(os.getenv("HOUR", 20))
     MINUTE:       int  = int(os.getenv("MINUTE", 0))
 
+    DAILY_REPORT_HOUR: int = int(os.getenv("DAILY_REPORT_HOUR", 20))
+    DAILY_REPORT_MINUTE: int = int(os.getenv("DAILY_REPORT_MINUTE", 0))
+    
+    WEEKLY_REPORT_HOUR: int = int(os.getenv("WEEKLY_REPORT_HOUR", 19))
+    WEEKLY_REPORT_MINUTE: int = int(os.getenv("WEEKLY_REPORT_MINUTE", 0))
+    
+    TIMEZONE_STR: str = os.getenv("TIMEZONE", "Europe/Moscow")
+
+settings = Settings()
+
 
 settings = Settings()
 

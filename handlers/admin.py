@@ -2,6 +2,7 @@
 
 from aiogram import types
 from config import settings
+from handlers.statistics import cmd_statistics, process_back_to_type_choice, process_statistics_period, process_statistics_request, process_statistics_type_choice
 from keyboards import admin_menu, period_menu
 from utils import make_msg_link
 from db import get_conn
@@ -170,7 +171,7 @@ async def send_unprocessed_xml(call: types.CallbackQuery):
   await call.answer()
 
 async def export_xlsx(call: types.CallbackQuery):
-  since = datetime.utcnow() - timedelta(days=30)
+  since = datetime.utcnow() - timedelta(days=365)
   
   sql = """
   SELECT
@@ -233,7 +234,7 @@ async def export_xlsx(call: types.CallbackQuery):
 
   await call.message.answer_document(
     ("report.xlsx", buf.read()),
-    caption=f"XLSX · {len(rows)} строк (30d)"
+    caption=f"XLSX · {len(rows)} строк (365d)"
   )
 
   await call.answer()
@@ -254,6 +255,11 @@ def register(dp):
   dp.register_callback_query_handler(ask_export_xlsx, lambda c: c.data == "req:export_xlsx")
   dp.register_callback_query_handler(export_xlsx, lambda c: c.data == "export_xlsx")
   dp.register_callback_query_handler(send_export_xlsx, lambda c: c.data.startswith("c:"))
+  dp.register_message_handler(cmd_statistics, commands=["statistics"])
+  dp.register_callback_query_handler(process_statistics_type_choice, lambda c: c.data.startswith("stats_type:"))
+  dp.register_callback_query_handler(process_statistics_request, lambda c: c.data.startswith("stats_fetch:"))
+  dp.register_callback_query_handler(process_back_to_type_choice, lambda c: c.data == "stats_back_to_type")
+  dp.register_callback_query_handler(process_statistics_period, lambda c: c.data.startswith("stats_fetch:"))
 
 def _format_badges(tags: list[str]) -> str:
   pad = lambda t: (t + " " * (10 - len(t)))[:10]

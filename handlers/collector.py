@@ -28,9 +28,9 @@ async def collect(msg: types.Message):
   tags = [main_tag]
   sent = await classify_sentiment(msg.text or "")
 
-#   print("Tags:", tags)
-#   print("Scores:", scores)
-#   print("Selected tag:", relevant_tags)
+  print("Tags:", tags)
+  print("Scores:", scores)
+  print("Selected tag:", relevant_tags)
 
   con = get_conn()
   cur = con.cursor()

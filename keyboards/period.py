@@ -11,4 +11,3 @@ def period_menu(prefix: str) -> InlineKeyboardMarkup:
     ],
     [InlineKeyboardButton("❌ Закрыть", callback_data="close_notify")]
   ])
-  

@@ -1,4 +1,5 @@
 # db/__init__.py
+
 from pathlib import Path
 from firebird.driver import connect, create_database
 from config import settings, BASE_DIR
